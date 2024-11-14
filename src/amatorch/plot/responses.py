@@ -49,7 +49,7 @@ def scatter_responses(
     responses_plt, labels_plt = subsample_classes(responses_plt, labels_plt, classes_plot)
 
     if values is None:
-        values = np.arange(np.max(np.array(labels)))
+        values = np.arange(len(np.unique(labels_plt)))
     else:
         values = values.numpy()
 

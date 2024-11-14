@@ -7,7 +7,6 @@ from ..data_wrangle import statistics_dim_subset
 from .colors import get_class_rgba, get_normalized_color_map
 
 
-
 def single_ellipse(center, covariance, ax, color="black"):
     """
     Plot an ellipse with a given center and covariance matrix.
