@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as tfun
 from torch.nn.utils.parametrize import register_parametrization
+from torch.nn.utils.parametrizations import orthogonal
 
 from amatorch import constraints
 
@@ -13,7 +14,8 @@ class AMAParent(ABC, nn.Module):
     Abstract AMA parent class.
     """
 
-    def __init__(self, priors, n_dim=None, n_filters=None, n_channels=1, filters=None):
+    def __init__(self, priors, n_dim=None, n_filters=None, n_channels=1, filters=None,
+                constraint="sphere"):
         """
         Initialize the AMA model.
 
@@ -42,7 +44,8 @@ class AMAParent(ABC, nn.Module):
 
         # Model parameters
         self.filters = nn.Parameter(filters)
-        register_parametrization(self, "filters", constraints.Sphere())
+        self.constraint = constraint
+        self._add_constraint(constraint)
 
     #########################
     # PREPROCESSING
@@ -209,3 +212,20 @@ class AMAParent(ABC, nn.Module):
         """
         posteriors = self.get_posteriors(stimuli)
         return posteriors
+
+    def _add_constraint(self, constraint="none"):
+        """
+        Add constraint to the filters.
+
+        Parameters
+        ----------
+        constraint : str
+            Constraint to apply to the filters. Can be 'none', 'sphere' or
+            'orthogonal'. Default is 'none'.
+        """
+        if constraint == "none":
+            register_parametrization(self, "filters", constraints.Identity())
+        elif constraint == "sphere":
+            register_parametrization(self, "filters", constraints.Sphere())
+        elif constraint == "orthogonal":
+            orthogonal(self, "filters")
