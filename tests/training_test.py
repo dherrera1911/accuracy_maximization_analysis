@@ -17,9 +17,9 @@ N_EPOCHS = 10
 LR = 0.1
 LR_STEP = 5
 LR_GAMMA = 0.5
-BATCH_SIZE = 512
-RESPONSE_NOISE = 0.1
-C50 = 0.5
+BATCH_SIZE = 1024
+RESPONSE_NOISE = 0.01
+C50 = 0.3
 
 
 @pytest.fixture(scope="module")
@@ -28,11 +28,11 @@ def data():
 
 
 ######## TEST THAT AMA RUNS ########
-def test_training(data):
-    ama = AMAGauss(
-        stimuli=data["stimuli"],
+@pytest.mark.parametrize("pairwise", [True, False])
+def test_training(data, pairwise):
+    ama = AMAGauss(stimuli=data["stimuli"],
         labels=data["labels"],
-        n_filters=2,
+        n_filters=6,
         response_noise=RESPONSE_NOISE,
         c50=C50,
     )
@@ -47,6 +47,7 @@ def test_training(data):
         learning_rate=LR,
         decay_step=LR_STEP,
         decay_rate=LR_GAMMA,
+        pairwise=pairwise,
     )
 
     # Get the posteriors
