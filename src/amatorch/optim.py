@@ -5,9 +5,13 @@ Routine to fit AMA filters using Gradient Descent.
 import time
 
 import torch
+import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader, TensorDataset
+from torch.nn.utils.parametrize import register_parametrization, remove_parametrizations
 from tqdm import tqdm
+
+from amatorch.constraints import FixedFilters
 
 __all__ = ["fit"]
 
@@ -26,10 +30,136 @@ def fit(
     learning_rate=0.1,
     decay_step=1000,
     decay_rate=1,
+    pairwise=False,
 ):
     """
-    Learn AMA filters using Gradient Descent, with the option to specify a custom loss function,
-    and optimizer and scheduler hyperparameters.
+    Learn AMA filters using Gradient Descent, with the option to specify a
+    custom loss function.
+
+
+    Parameters
+    ----------
+    model : AMA model object
+        The model used for fitting.
+    stimuli : torch.Tensor
+        Stimuli tensor of shape (n_stim, n_channels, n_dim).
+    labels : torch.Tensor
+        Label tensor of shape (n_stim).
+    epochs : int
+        Number of training epochs.
+    loss_fun : callable, optional
+        Loss function that takes in model, stimuli, and labels.
+        Default is negative log posterior at the true category (cross-entropy).
+    batch_size : int, optional
+        Batch size, by default 512.
+    learning_rate : float, optional
+        Initial learning rate, by default 0.1.
+    decay_step : int, optional
+        Number of steps to decay the learning rate, by default 1000.
+    decay_rate : float, optional
+        Learning rate decay factor, by default 1.
+    pairwise : bool, optional
+        Whether to train the filters in pairs, by default False.
+
+    Returns
+    -------
+    torch.Tensor
+        Tensor containing the loss at each epoch (shape: epochs).
+    torch.Tensor
+        Tensor containing the training time at each epoch (shape: epochs).
+    """
+
+    if not pairwise:
+        loss, training_time = fitting_loop(
+            model=model,
+            stimuli=stimuli,
+            labels=labels,
+            epochs=epochs,
+            loss_fun=loss_fun,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            decay_step=decay_step,
+            decay_rate=decay_rate,
+        )
+
+    else:
+        # Clone filters to add them a pair at a time
+        initial_filters = model.filters.detach().clone()
+
+        n_filters = model.filters.shape[0]
+        n_pairs = n_filters // 2
+        # Require n_pairs to be even
+        if model.filters.shape[0] % 2 != 0:
+            raise ValueError(
+                "Number of filters must be even for pairwise training."
+            )
+
+        # Keep only the first two filters
+        remove_parametrizations(model, "filters")
+        model.filters = nn.Parameter(initial_filters[:2])
+        model._add_constraint(model.constraint)
+
+        # Loop over pairs
+        loss = torch.tensor([])
+        training_time = torch.tensor([])
+        for i in range(n_pairs):
+
+            if i > 0:
+                # Extract next pair of filters
+                next_pair = initial_filters[2 * i : 2 * (i + 1)]
+
+                # Add the next pair of filters to the model
+                remove_parametrizations(model, "filters")
+                model.filters = nn.Parameter(
+                  torch.cat([model.filters, next_pair], dim=0)
+
+                )
+                model._add_constraint(model.constraint)
+
+                # Fix filters up to the current pair
+                if i > 0:
+                    register_parametrization(
+                        model, "filters", FixedFilters(n_row_fixed=i * 2)
+                    )
+
+            # Fit the model with the current pair of filters
+            current_loss, current_time = fitting_loop(
+                model=model,
+                stimuli=stimuli,
+                labels=labels,
+                epochs=epochs,
+                loss_fun=loss_fun,
+                batch_size=batch_size,
+                learning_rate=learning_rate,
+                decay_step=decay_step,
+                decay_rate=decay_rate,
+            )
+
+            loss = torch.cat([loss, current_loss])
+            if i>0:
+                current_time = current_time + training_time[-1]
+            training_time = torch.cat([training_time, current_time])
+
+        # Remove the fixed-filter parametrization
+        remove_parametrizations(model, "filters")
+        model._add_constraint(model.constraint)
+
+    return loss, training_time
+
+
+def fitting_loop(
+    model,
+    stimuli,
+    labels,
+    epochs,
+    loss_fun=None,
+    batch_size=512,
+    learning_rate=0.1,
+    decay_step=1000,
+    decay_rate=1,
+):
+    """
+    Loop for fitting the AMA model using Gradient Descent.
 
 
     Parameters
